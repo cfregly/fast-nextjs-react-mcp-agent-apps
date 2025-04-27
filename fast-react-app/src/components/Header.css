@@ -1,0 +1,43 @@
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background-color: #333;
+    color: white;
+  }
+  
+  .logo {
+    display: flex;
+    align-items: center; /* Align items vertically */
+  }
+  
+  .logo-image {
+    width: 40px; /* Adjust width as needed */
+    height: 40px; /* Adjust height as needed */
+    margin-right: 10px; /* Space between logo and text */
+  }
+  
+  .logo-text {
+    font-size: 1.5rem; /* Adjust font size as needed */
+    color: white; /* Change color as needed */
+  }
+  
+  .nav ul {
+    list-style: none;
+    display: flex;
+    gap: 1.5rem; /* Increased gap for better spacing */
+  }
+  
+  .nav a {
+    color: white;
+    text-decoration: none;
+    padding: 0.5rem 1rem; /* Added padding for clickable area */
+    border-radius: 5px; /* Rounded corners for links */
+    transition: background-color 0.3s; /* Smooth transition for hover effect */
+  }
+  
+  .nav a:hover {
+    text-decoration: underline;
+    background-color: rgba(255, 255, 255, 0.2); /* Subtle background on hover */
+  }

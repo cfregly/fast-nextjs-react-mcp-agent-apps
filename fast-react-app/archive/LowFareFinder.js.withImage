@@ -1,0 +1,52 @@
+import React, { useState } from "react";
+import OpenAIStreamingComponent from './OpenAIStreamingComponent';
+
+const LowFareFinder = () => {
+
+  const [imageBase64, setImageBase64] = useState("");
+  const [response, setResponse] = useState(null);
+  const [prompt] = useState("What is the lowest fare for departure and return in this set of fares?");
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files[0];
+    const reader = new FileReader();
+    
+    reader.onloadend = () => {
+      const base64String = reader.result.split(",")[1];
+      setImageBase64(base64String);
+    };
+    
+    if (file) {
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleResponseUpdate = (data) => {
+    setResponse(data);
+  };
+
+  return (
+    <div>
+      <h1>Welcome to Low Fare Finder!</h1>
+      <p>Upload an image of low fares for both the departure and return flights - and we'll find you the lowest fare for both!</p>
+      <input type="file" accept="image/*" onChange={handleImageUpload} />
+      <OpenAIStreamingComponent prompt={prompt} imageBase64={imageBase64} onResponseUpdate={handleResponseUpdate} />
+
+      {response && (
+        <div>
+          <h2>API Response:</h2>
+          <pre>{JSON.stringify(response, null, 2)}</pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default LowFareFinder;
+
+
+
+
+
+
+

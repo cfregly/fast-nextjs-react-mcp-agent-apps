@@ -1,0 +1,35 @@
+{
+  "name": "travel-nextjs-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@types/react-window": "^1.8.8",
+    "@types/ws": "^8.18.1",
+    "@vercel/kv": "^3.0.0",
+    "critters": "^0.0.23",
+    "next": "^14.2.9",
+    "openai": "^4.96.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-window": "^1.8.11",
+    "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.17.16",
+    "@types/next": "^8.0.7",
+    "@types/node": "^20.17.31",
+    "@types/react": "^18.3.20",
+    "@types/react-dom": "^18.3.6",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.9",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}

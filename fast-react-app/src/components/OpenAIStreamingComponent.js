@@ -1,0 +1,194 @@
+import React, { useCallback, useMemo } from 'react';
+
+// This component handles streaming responses from OpenAI's API
+const OpenAIStreamingComponent = ({ prompt, onResponseUpdate, suppressErrors = false }) => {
+    // Function to handle API function calls
+    //   Tip: useCallback() is a React hook that returns a memoized version of the 
+    //        callback that only changes if one of the dependencies has changed. 
+    //        In this case, the dependency array is empty ([]), so the function 
+    //        will be memoized and won't change across re-renders.
+    const callFunction = useCallback(async (functionCall) => {
+      console.log('Function call received:', functionCall);
+  
+      // Check if the function call is for weather information
+      if (functionCall.name === 'get_current_weather') {
+        // Extract location and unit from the function call arguments
+        const { location = 'Unknown', unit = 'fahrenheit' } = functionCall.arguments || {};
+  
+        // Return a mock weather response
+        return `The weather in ${location} is currently 82°${unit === 'celsius' ? 'C' : 'F'} and sunny [MOCK FUNCTION-CALL RESPONSE].`;
+      }
+      return 'Function not implemented';
+    }, []);
+  
+    // Define available functions for the API
+    //   Tip: `const functions` declares a constant named `functions` 
+    //        which will hold the memoized value.
+    //   Tip: useMemo() is a React hook that returns a memoized value. 
+    //        In this case, it memoizes the `functions` array, which 
+    //        is an array of objects.  This means that the `functions` array 
+    //        will only be re-created if one of the dependencies has changed.
+    //        This is useful for performance optimization, especially if the
+    //        functions array is passed down as a prop to child components.
+    //        In this case, the `dependency` array is empty ([]), so the 
+    //        `functions` array will only be created once.
+    //   Summary: The `functions` array is efficiently managed and provides 
+    //            a clear definition of the available functions for the OpenAI API.
+    const functions = useMemo(() => [
+      {
+        name: 'get_current_weather', // The name of the function
+        description: 'Get the current weather in a given location', //  brief description of what the function does
+        parameters: { // Object that describes the parameters the function accepts
+          type: 'object',
+          properties: {  // type of the parameters object
+            location: {  
+              type: 'string', // string that describes the city and state (e.g., San Francisco, CA)
+              description: 'The city and state, e.g. San Francisco, CA', // 
+            },
+            unit: { type: 'string', enum: ['celsius', 'fahrenheit'] }, // string that can be either 'celsius' or 'fahrenheit'
+          },
+          required: ['location'], // array that lists the required properties
+        },
+      },
+    ], []);
+  
+    // Function to stream completions from OpenAI API
+    // Tip: useCallback() is a React hook that returns a memoized version 
+    //      of the callback that only changes if one of the dependencies has changed. 
+    //      In this case, the dependencies are [suppressErrors, functions, callFunction].
+    // Tip: async (prompt) => { ... } defines an asynchronous arrow function
+    //      that takes a single parameter prompt.
+    const streamCompletion = useCallback(async (prompt) => {
+      let responseText = '';
+      try {
+        //  Makes a POST request to the OpenAI API to get chat completions
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          // Sets the content type to JSON and includes the authorization token.
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.REACT_APP_OPENAI_API_KEY}`,
+          },
+          // Sends the request body as a JSON string, including the model, 
+          // user message, available functions, and the stream flag set to true.
+          body: JSON.stringify({
+            model: 'gpt-4o',
+            messages: [{ role: 'user', content: prompt }],
+            functions,
+            stream: true,
+          }),
+        });
+  
+        // Gets a reader to read the streamed response.
+        const reader = response.body.getReader();
+  
+        // Creates a decoder to decode the streamed response as UTF-8 text.
+        const decoder = new TextDecoder('utf-8');
+  
+        let currentFunctionCall = null;
+        let functionArguments = '';
+  
+        while (true) {
+          // Continuously reads chunks from the stream until done.
+          const { done, value } = await reader.read();
+  
+          // if the stream has been fully read, break out of the while loop
+          if (done) break;
+  
+          // Decode the chunk
+          const chunk = decoder.decode(value);
+  
+          // Split the chunk into lines
+          const lines = chunk.split('\n').filter(line => line.trim() !== '');
+  
+          // Iterate through all lines of the chunk
+          for (const line of lines) {
+            console.log(line)
+            // Remove the `data: ` from the beginning and get straight to the JSON (or [DONE] if done)          
+            const jsonLine = line.replace(/^data: /, '').trim()
+  
+            // OpenAI API uses `data: ` prefix for each line of the streamed response
+            // `[DONE]` is a special marker indicating the end of the OpenAI stream.
+  
+            // If jsonLine is [DONE], just skip it since it indicates the end of the OpenAI stream.
+            if (jsonLine === '[DONE]') {
+              // Skip the 'data: [DONE]' line
+              // Note:  This *should* be the last line, so we could potentially break out of the for loop
+              continue;
+            }
+  
+            try {            
+              // Parses each line as JSON
+              const parsedLine = JSON.parse(jsonLine);
+              const { choices } = parsedLine;
+              const { delta } = choices[0];  // delta is a partial update to the response contents (here, we ware only using the 1st choice)
+              const { content, function_call } = delta;  // delta can contain both `content` and a `function_call` to be invoked
+  
+              if (content) {
+                // Append content to the response
+                responseText += content;
+              }
+  
+              // Detect if a function call is present and initialize the function call object, if present
+              if (function_call) {
+                // Initialize the function call object if not already initialized
+                if (!currentFunctionCall) {
+                  currentFunctionCall = { name: '', arguments: '' };
+                }
+                // Collect the function name
+                if (function_call.name) {
+                  currentFunctionCall.name = function_call.name;
+                }
+                // Collect the function arguments
+                if (function_call.arguments) {
+                  functionArguments += function_call.arguments;
+                }
+  
+                // Check if the function call is complete and prepare the function for invocation
+                if (functionArguments.includes('}')) {
+                  try {
+                    // Parse the complete function arguments
+                    currentFunctionCall.arguments = JSON.parse(functionArguments);
+                    console.log('Full function call:', currentFunctionCall);
+  
+                    // Call the function and get the response
+                    const functionResponse = await callFunction(currentFunctionCall); // Function calling                
+  
+                    // Append the function response to the current response
+                    responseText += '\n' + functionResponse;
+                    console.log('Function response:', functionResponse);
+                  } catch (error) {
+                    console.error('Error parsing function arguments:', error);
+                  }
+                  // Reset the function call and arguments
+                  currentFunctionCall = null;
+                  functionArguments = '';
+                }
+              }
+            } catch (error) {
+              console.error('Error parsing line:', line, error);
+            }
+          }
+        }
+  
+        // After the stream is complete, call onResponseUpdate with the full response
+        onResponseUpdate(responseText);
+      } catch (error) {
+        if (!suppressErrors) {
+          console.error('Error:', error);
+        }
+        onResponseUpdate('An error occurred while fetching the weather information.');
+      }
+    }, [suppressErrors, functions, callFunction, onResponseUpdate]);
+
+    // Call streamCompletion when the prompt changes
+    React.useEffect(() => {
+      if (prompt) {
+        streamCompletion(prompt);
+      }
+    }, [prompt, streamCompletion]);
+
+    return null; // This component doesn't render anything
+};
+
+export default OpenAIStreamingComponent;

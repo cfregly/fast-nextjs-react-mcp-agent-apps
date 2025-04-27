@@ -1,0 +1,153 @@
+import { useCallback, useMemo, useEffect, useRef } from 'react';
+
+const OpenAIStreamingComponent = ({ prompt, imageBase64, onResponseUpdate, suppressErrors = false }) => {
+  const callFunction = useCallback(async (functionCall) => {
+    console.log('Function call received:', functionCall);
+
+    if (functionCall.name === 'get_current_weather') {
+      const { location = 'Unknown', unit = 'fahrenheit' } = functionCall.arguments || {};
+      return `The weather in ${location} is currently 82°${unit === 'celsius' ? 'C' : 'F'} and sunny.`;
+    }
+    return 'Function not implemented';
+  }, []);
+
+  const functions = useMemo(() => [
+    {
+      name: 'get_current_weather',
+      description: 'Get the current weather in a given location',
+      parameters: {
+        type: 'object',
+        properties: {
+          location: {
+            type: 'string',
+            description: 'The city and state, e.g. San Francisco, CA',
+          },
+          unit: { type: 'string', enum: ['celsius', 'fahrenheit'] },
+        },
+        required: ['location'],
+      },
+    },
+  ], []);
+
+  const streamCompletion = useCallback(async () => {
+    let responseText = '';
+    try {
+      const messages = [];
+
+      if (prompt) {
+        messages.push({ role: 'user', content: prompt });
+      }
+
+      if (imageBase64) {
+        messages.push({
+          role: 'user',
+          content: `data:image/jpeg;base64,${imageBase64}`,
+        });
+      }
+
+      if (messages.length === 0) {
+        throw new Error('No prompt or image provided');
+      }
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages,
+          functions,
+          stream: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error.message);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      let currentFunctionCall = null;
+      let functionArguments = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+        for (const line of lines) {
+          const jsonLine = line.replace(/^data: /, '').trim();
+          if (jsonLine === '[DONE]') continue;
+
+          try {
+            const parsedLine = JSON.parse(jsonLine);
+            const { choices } = parsedLine;
+            const { delta } = choices[0];
+            const { content, function_call } = delta;
+
+            if (content) {
+              responseText += content;
+            }
+
+            if (function_call) {
+              if (!currentFunctionCall) {
+                currentFunctionCall = { name: '', arguments: '' };
+              }
+              if (function_call.name) {
+                currentFunctionCall.name = function_call.name;
+              }
+              if (function_call.arguments) {
+                functionArguments += function_call.arguments;
+              }
+
+              if (functionArguments.includes('}')) {
+                try {
+                  currentFunctionCall.arguments = JSON.parse(functionArguments);
+                  console.log('Full function call:', currentFunctionCall);
+
+                  const functionResponse = await callFunction(currentFunctionCall);
+                  responseText += '\n' + functionResponse;
+                  console.log('Function response:', functionResponse);
+                } catch (error) {
+                  console.error('Error parsing function arguments:', error);
+                }
+                currentFunctionCall = null;
+                functionArguments = '';
+              }
+            }
+          } catch (error) {
+            console.error('Error parsing line:', line, error);
+          }
+        }
+      }
+
+      onResponseUpdate(responseText);
+    } catch (error) {
+      if (!suppressErrors) {
+        console.error('Error:', error);
+      }
+      onResponseUpdate(`An error occurred: ${error.message}`);
+    }
+  }, [suppressErrors, functions, callFunction, onResponseUpdate, prompt, imageBase64]);
+
+  const prevPrompt = useRef(prompt);
+  const prevImageBase64 = useRef(imageBase64);
+
+  useEffect(() => {
+    if ((prompt && prompt !== prevPrompt.current) || (imageBase64 && imageBase64 !== prevImageBase64.current)) {
+      streamCompletion();
+      prevPrompt.current = prompt;
+      prevImageBase64.current = imageBase64;
+    }
+  }, [prompt, imageBase64, streamCompletion]);
+
+  return null;
+};
+
+export default OpenAIStreamingComponent;
